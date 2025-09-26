@@ -1,22 +1,37 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <title>Star Hunt</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    html, body {margin:0; padding:0; height:100%; background:#000; overflow:hidden;}
-    #gameCanvas { display:block; width:100vw; height:100vh; background:#000; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: #000; overflow: hidden;
+    }
+    #gameCanvas {
+      display: block; width: 100vw; height: 100vh; background: #000;
+    }
     #quiz {
       position: fixed; inset: 0; display: none; place-items: center;
-      background: rgba(0,0,0,0.6); color:#fff; font-family:sans-serif;
+      background: rgba(0,0,0,0.6); color: #fff; font-family: sans-serif;
     }
-    #panel {background:#111; padding:1rem; border-radius:12px; max-width:420px;}
-    .choices{display:flex; gap:10px; margin-top:10px;}
-    .choices button{flex:1; padding:10px; border-radius:8px; border:1px solid #555; background:#222; color:#fff;}
-    #hud{position:fixed; top:10px; left:12px; font-size:14px; color:#9ad6ff; font-family:sans-serif;}
+    #panel {
+      background: #111; padding: 1rem; border-radius: 12px; max-width: 420px;
+    }
+    .choices { display: flex; gap: 10px; margin-top: 10px; }
+    .choices button {
+      flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #555;
+      background: #222; color: #fff;
+    }
+    #hud {
+      position: fixed; top: 10px; left: 12px;
+      font-size: 14px; color: #9ad6ff; font-family: sans-serif;
+    }
   </style>
 </head>
+
 <body>
   <canvas id="gameCanvas"></canvas>
   <div id="hud">Stars left: <span id="starsLeft"></span> | Size: <span id="sizeHud"></span></div>
@@ -31,47 +46,74 @@
   </div>
 
 <script>
-const REAL_STARS=["Sirius","Canopus","Arcturus","Vega","Capella","Rigel","Procyon","Betelgeuse","Aldebaran","Antares"];
-const FARM_ANIMALS=["Cow","Pig","Goat","Sheep","Chicken","Duck","Horse","Donkey","Rabbit","Turkey"];
-const rand=(a,b)=>Math.random()*(b-a)+a,choice=a=>a[(Math.random()*a.length)|0];
+const REAL_STARS = ["Sirius","Canopus","Arcturus","Vega","Capella","Rigel","Procyon","Betelgeuse","Aldebaran","Antares"];
+const FARM_ANIMALS = ["Cow","Pig","Goat","Sheep","Chicken","Duck","Horse","Donkey","Rabbit","Turkey"];
+const rand=(a,b)=>Math.random()*(b-a)+a, choice=a=>a[(Math.random()*a.length)|0];
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
 
-const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d");
-function resize(){canvas.width=innerWidth;canvas.height=innerHeight;}
-addEventListener("resize",resize);resize();
+const canvas=document.getElementById("gameCanvas"), ctx=canvas.getContext("2d");
+function resize(){canvas.width=innerWidth; canvas.height=innerHeight;}
+addEventListener("resize",resize); resize();
 
-const hudStars=document.getElementById("starsLeft"),hudSize=document.getElementById("sizeHud");
-const quiz=document.getElementById("quiz"),opt1=document.getElementById("opt1"),opt2=document.getElementById("opt2");
+const hudStars=document.getElementById("starsLeft"), hudSize=document.getElementById("sizeHud");
+const quiz=document.getElementById("quiz"), opt1=document.getElementById("opt1"), opt2=document.getElementById("opt2");
 
 const ship={x:innerWidth/2,y:innerHeight/2,dir:0,speed:0,maxSpeed:3,accel:0.15,friction:0.08,scale:1};
 const keys=new Set();
-addEventListener("keydown",e=>{if(["KeyW","KeyA","KeyS","KeyD","Space"].includes(e.code))e.preventDefault();keys.add(e.code);});
-addEventListener("keyup",e=>keys.delete(e.code));
 
-const stars=[],STAR_COUNT=40;
+let firing=false;       // space pressed?
+let fireCooldown=0;     // frames until next shot
+
+function quizOpen(){return quiz.style.display!=="none" && quiz.style.display!=="";}
+
+addEventListener("keydown", e=>{
+  if (["KeyW","KeyA","KeyS","KeyD","Space","Spacebar"].includes(e.code) || e.key===" ") {
+    e.preventDefault();
+  }
+  if (["KeyW","KeyA","KeyS","KeyD"].includes(e.code)) keys.add(e.code);
+  if (e.code==="Space"||e.code==="Spacebar"||e.key===" ") firing=true;
+});
+addEventListener("keyup", e=>{
+  keys.delete(e.code);
+  if (e.code==="Space"||e.code==="Spacebar"||e.key===" ") firing=false;
+});
+
+const stars=[], STAR_COUNT=40;
 for(let i=0;i<STAR_COUNT;i++){stars.push({x:rand(20,innerWidth-20),y:rand(20,innerHeight-20),r:3+Math.random()*2,alive:true});}
 
-function updateHUD(){hudStars.textContent=stars.filter(s=>s.alive).length;hudSize.textContent=ship.scale.toFixed(1)+"x";}
+function updateHUD(){hudStars.textContent=stars.filter(s=>s.alive).length; hudSize.textContent=ship.scale.toFixed(1)+"x";}
 updateHUD();
 
-let pendingCollision=null;function askQuestion(starIndex){
+let pendingCollision=null;
+function askQuestion(starIndex){
   pendingCollision=starIndex;
-  const real=choice(REAL_STARS),animal=choice(FARM_ANIMALS);
+  const real=choice(REAL_STARS), animal=choice(FARM_ANIMALS);
   const options=shuffle([{label:real,isStar:true},{label:animal,isStar:false}]);
-  opt1.textContent=options[0].label;opt1.dataset.star=options[0].isStar;
-  opt2.textContent=options[1].label;opt2.dataset.star=options[1].isStar;
+  opt1.textContent=options[0].label; opt1.dataset.star=options[0].isStar;
+  opt2.textContent=options[1].label; opt2.dataset.star=options[1].isStar;
   quiz.style.display="grid";
 }
-function handleAnswer(btn){if(btn.dataset.star==="true"){const s=stars[pendingCollision];if(s&&s.alive){s.alive=false;ship.scale=Math.min(3,ship.scale+0.2);updateHUD();}}pendingCollision=null;quiz.style.display="none";}
-opt1.onclick=()=>handleAnswer(opt1);opt2.onclick=()=>handleAnswer(opt2);
+function handleAnswer(btn){
+  if(btn.dataset.star==="true"){const s=stars[pendingCollision]; if(s&&s.alive){s.alive=false; ship.scale=Math.min(3,ship.scale+0.2); updateHUD();}}
+  pendingCollision=null; quiz.style.display="none";
+}
+opt1.onclick=()=>handleAnswer(opt1); opt2.onclick=()=>handleAnswer(opt2);
 
 function stepControls(){
-  let ax=0,ay=0;if(keys.has("KeyW"))ay-=ship.accel;if(keys.has("KeyS"))ay+=ship.accel;if(keys.has("KeyA"))ax-=ship.accel;if(keys.has("KeyD"))ax+=ship.accel;
-  const vx=Math.cos(ship.dir)*ship.speed+ax,vy=Math.sin(ship.dir)*ship.speed+ay;
-  if(vx||vy)ship.dir=Math.atan2(vy,vx);ship.speed=Math.min(ship.maxSpeed,Math.hypot(vx,vy));
-  ship.speed*=(1-ship.friction);if(ship.speed<0.02)ship.speed=0;
-  ship.x+=Math.cos(ship.dir)*ship.speed;ship.y+=Math.sin(ship.dir)*ship.speed;
-  if(ship.x<-20)ship.x=innerWidth+20;if(ship.x>innerWidth+20)ship.x=-20;if(ship.y<-20)ship.y=innerHeight+20;if(ship.y>innerHeight+20)ship.y=-20;
+  let ax=0,ay=0;
+  if(keys.has("KeyW")) ay-=ship.accel;
+  if(keys.has("KeyS")) ay+=ship.accel;
+  if(keys.has("KeyA")) ax-=ship.accel;
+  if(keys.has("KeyD")) ax+=ship.accel;
+  const vx=Math.cos(ship.dir)*ship.speed+ax, vy=Math.sin(ship.dir)*ship.speed+ay;
+  if(vx||vy) ship.dir=Math.atan2(vy,vx);
+  ship.speed=Math.min(ship.maxSpeed,Math.hypot(vx,vy));
+  ship.speed*=(1-ship.friction); if(ship.speed<0.02) ship.speed=0;
+  ship.x+=Math.cos(ship.dir)*ship.speed; ship.y+=Math.sin(ship.dir)*ship.speed;
+  if(ship.x<-20) ship.x=innerWidth+20;
+  if(ship.x>innerWidth+20) ship.x=-20;
+  if(ship.y<-20) ship.y=innerHeight+20;
+  if(ship.y>innerHeight+20) ship.y=-20;
 }
 
 // projectiles
@@ -82,52 +124,55 @@ function shoot(){
   const py=ship.y+Math.sin(ship.dir)*15*ship.scale;
   projectiles.push({x:px,y:py,vx:Math.cos(ship.dir)*speed,vy:Math.sin(ship.dir)*speed,size:8});
 }
-addEventListener("keydown", e => {
-  if (quiz.style.display === "none") {
-    if (e.code === "Space" || e.code === "Spacebar" || e.key === " ") {
-      e.preventDefault();
-      shoot();
-    }
-  }
-});
 
 function drawShip(){
-  const size=10*ship.scale;ctx.save();ctx.translate(ship.x,ship.y);ctx.rotate(ship.dir);
-  ctx.beginPath();ctx.moveTo(size*1.6,0);ctx.lineTo(-size,size*0.9);ctx.lineTo(-size,-size*0.9);ctx.closePath();
-  ctx.fillStyle="#fff";ctx.strokeStyle="#4aa3ff";ctx.lineWidth=1.5*ship.scale;ctx.fill();ctx.stroke();ctx.restore();
+  const size=10*ship.scale; ctx.save(); ctx.translate(ship.x,ship.y); ctx.rotate(ship.dir);
+  ctx.beginPath(); ctx.moveTo(size*1.6,0); ctx.lineTo(-size,size*0.9); ctx.lineTo(-size,-size*0.9); ctx.closePath();
+  ctx.fillStyle="#fff"; ctx.strokeStyle="#4aa3ff"; ctx.lineWidth=1.5*ship.scale; ctx.fill(); ctx.stroke(); ctx.restore();
 }
-
-function drawStars(){ctx.fillStyle="#9ad6ff";for(const s of stars){if(!s.alive)continue;ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();}}
-
+function drawStars(){ctx.fillStyle="#9ad6ff"; for(const s of stars){if(!s.alive) continue; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();}}
 function drawProjectiles(){
-  ctx.strokeStyle="#ff4444";ctx.lineWidth=2;
+  ctx.strokeStyle="#ff4444"; ctx.lineWidth=2;
   for(const p of projectiles){
-    ctx.beginPath();ctx.moveTo(p.x-p.size, p.y);ctx.lineTo(p.x+p.size,p.y);
-    ctx.moveTo(p.x, p.y-p.size);ctx.lineTo(p.x,p.y+p.size);ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p.x-p.size,p.y); ctx.lineTo(p.x+p.size,p.y);
+    ctx.moveTo(p.x,p.y-p.size); ctx.lineTo(p.x,p.y+p.size); ctx.stroke();
   }
 }
-
 function updateProjectiles(){
-  for(const p of projectiles){p.x+=p.vx;p.y+=p.vy;}
+  for(const p of projectiles){p.x+=p.vx; p.y+=p.vy;}
   for(const s of stars){
-    if(!s.alive)continue;
+    if(!s.alive) continue;
     for(const p of projectiles){
-      const dx=s.x-p.x,dy=s.y-p.y;if(dx*dx+dy*dy<(s.r+10)*(s.r+10)){s.r+=2;p.hit=true;}
+      const dx=s.x-p.x, dy=s.y-p.y;
+      if(dx*dx+dy*dy<(s.r+10)*(s.r+10)){s.r+=2; p.hit=true;}
     }
   }
   for(let i=projectiles.length-1;i>=0;i--){
-    const p=projectiles[i];if(p.x<-50||p.x>innerWidth+50||p.y<-50||p.y>innerHeight+50||p.hit)projectiles.splice(i,1);
+    const p=projectiles[i];
+    if(p.x<-50||p.x>innerWidth+50||p.y<-50||p.y>innerHeight+50||p.hit) projectiles.splice(i,1);
   }
 }
 
 function checkCollision(){
-  if(quiz.style.display==="grid")return;const hit=12*ship.scale;
-  for(let i=0;i<stars.length;i++){const s=stars[i];if(!s.alive)continue;const dx=ship.x-s.x,dy=ship.y-s.y;if(dx*dx+dy*dy<(hit+s.r)*(hit+s.r)){askQuestion(i);break;}}
+  if(quiz.style.display==="grid") return;
+  const hit=12*ship.scale;
+  for(let i=0;i<stars.length;i++){
+    const s=stars[i]; if(!s.alive) continue;
+    const dx=ship.x-s.x, dy=ship.y-s.y;
+    if(dx*dx+dy*dy<(hit+s.r)*(hit+s.r)){askQuestion(i); break;}
+  }
 }
 
 function loop(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawStars();stepControls();updateProjectiles();drawProjectiles();drawShip();checkCollision();
+  drawStars(); stepControls(); updateProjectiles(); drawProjectiles(); drawShip(); checkCollision();
+
+  // firing control
+  if(firing && !quizOpen()){
+    if(fireCooldown<=0){shoot(); fireCooldown=10;} // adjust 10 for rate
+  }
+  if(fireCooldown>0) fireCooldown--;
+
   requestAnimationFrame(loop);
 }
 loop();
