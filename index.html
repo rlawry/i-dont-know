@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Star Hunt</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%; background:#000; overflow: hidden; color:#fff;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    #gameCanvas { display:block; width:100vw; height:100vh; background:#000; }
+    /* Question overlay */
+    #quiz {
+      position: fixed; inset: 0; display: none; place-items: center;
+      background: rgba(0,0,0,0.6);
+    }
+    #panel {
+      background: #111; border: 1px solid #444; border-radius: 12px; padding: 16px 18px; width: min(420px, 90vw);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #panel h2 { font-size: 18px; margin: 0 0 12px; }
+    .choices { display:flex; gap:10px; }
+    .choices button {
+      flex:1; padding:10px 12px; border-radius:10px; border:1px solid #555; background:#1a1a1a; color:#fff; cursor:pointer;
+    }
+    .choices button:focus { outline: 2px solid #67aaff; outline-offset: 2px; }
+    #hud {
+      position: fixed; top: 10px; left: 12px; font-size: 14px; color:#9ad6ff; user-select:none;
+      text-shadow: 0 1px 2px #000;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="hud">Stars left: <span id="starsLeft">0</span> | Size: <span id="sizeHud">1.0x</span></div>
+
+  <div id="quiz" aria-modal="true" role="dialog">
+    <div id="panel">
+      <h2 id="question">Which of the following is a real star?</h2>
+      <div class="choices">
+        <button id="opt1"></button>
+        <button id="opt2"></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Data ---
+    const REAL_STARS = [
+      "Sirius","Canopus","Arcturus","Vega","Capella","Rigel","Procyon","Achernar","Betelgeuse",
+      "Hadar","Altair","Acrux","Aldebaran","Antares","Spica","Pollux","Fomalhaut","Deneb","Mimosa",
+      "Regulus","Adhara","Castor","Gacrux","Bellatrix","Elnath","Miaplacidus","Alnair","Alioth",
+      "Shao","Sadr","Markab","Enif","Mirfak","Alnitak","Alnilam","Mintaka","Merak","Dubhe","Kochab",
+      "Polaris","Nunki","Rasalhague","Zubenelgenubi","Scheat","Alpheratz","Alhena","Saiph","Wezen",
+      "Alkaid","Alcyone"
+    ];
+    const FARM_ANIMALS = [
+      "Cow","Chicken","Pig","Goat","Sheep","Duck","Turkey","Donkey","Horse","Llama","Alpaca",
+      "Goose","Rabbit","Yak","Water buffalo","Camel","Guinea fowl","Quail"
+    ];
+
+    // --- Helpers ---
+    const rand = (min, max) => Math.random() * (max - min) + min;
+    const choice = arr => arr[(Math.random() * arr.length) | 0];
+    function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]];} return a; }
+
+    // --- Canvas setup ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const hudStars = document.getElementById('starsLeft');
+    const hudSize  = document.getElementById('sizeHud');
+    const quiz = document.getElementById('quiz');
+    const opt1 = document.getElementById('opt1');
+    const opt2 = document.getElementById('opt2');
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(innerWidth * dpr);
+      canvas.height = Math.floor(innerHeight * dpr);
+      canvas.style.width = '100vw';
+      canvas.style.height = '100vh';
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    addEventListener('resize', resize);
+    resize();
+
+    // --- Game state ---
+    const STAR_COUNT = 60;
+    const stars = [];
+    const STAR_RADIUS = 3;
+    const STAR_COLOR = '#9ad6ff';
+
+    const ship = {
+      x: innerWidth/2,
+      y: innerHeight/2,
+      dir: 0,        // radians
+      speed: 0,
+      maxSpeed: 3.2,
+      accel: 0.15,
+      friction: 0.08,
+      scale: 1.0
+    };
+
+    const keys = new Set();
+    addEventListener('keydown', e => {
+      if (quiz.style.display === 'grid') return; // freeze while quizzing
+      if (['KeyW','KeyA','KeyS','KeyD'].includes(e.code)) e.preventDefault();
+      keys.add(e.code);
+    });
+    addEventListener('keyup', e => keys.delete(e.code));
+
+    function initStars() {
+      stars.length = 0;
+      for (let i=0;i<STAR_COUNT;i++){
+        stars.push({
+          x: rand(20, innerWidth-20),
+          y: rand(20, innerHeight-20),
+          r: STAR_RADIUS + Math.random()*1.5,
+          alive: true
+        });
+      }
+      updateHUD();
+    }
+
+    function updateHUD(){
+      hudStars.textContent = stars.filter(s=>s.alive).length;
+      hudSize.textContent = ship.scale.toFixed(1)+'x';
+    }
+
+    // --- Quiz logic ---
+    let pendingCollisionIndex = null;
+    let correctAnswer = null;
+
+    function askQuestion(starIndex){
+      pendingCollisionIndex = starIndex;
+
+      const real = choice(REAL_STARS);
+      const animal = choice(FARM_ANIMALS);
+      const options = shuffle([ {label: real, isStar:true}, {label: animal, isStar:false} ]);
+
+      correctAnswer = real;
+
+      opt1.textContent = options[0].label;
+      opt1.dataset.isStar = options[0].isStar ? '1' : '0';
+      opt2.textContent = options[1].label;
+      opt2.dataset.isStar = options[1].isStar ? '1' : '0';
+
+      quiz.style.display = 'grid';
+      opt1.focus();
+    }
+
+    function handleAnswer(btn){
+      const isStar = btn.dataset.isStar === '1';
+      if (pendingCollisionIndex == null) { quiz.style.display = 'none'; return; }
+
+      if (isStar) {
+        // consume star and grow ship
+        const s = stars[pendingCollisionIndex];
+        if (s && s.alive) s.alive = false;
+        ship.scale = Math.min(3.0, ship.scale + 0.2);
+        updateHUD();
+      }
+      // close quiz and resume
+      pendingCollisionIndex = null;
+      quiz.style.display = 'none';
+    }
+
+    opt1.onclick = () => handleAnswer(opt1);
+    opt2.onclick = () => handleAnswer(opt2);
+    // keyboard support on overlay
+    quiz.addEventListener('keydown', (e)=>{
+      if (e.key === 'Escape') { pendingCollisionIndex=null; quiz.style.display='none'; }
+    });
+
+    // --- Physics and controls ---
+    function stepControls(){
+      let ax = 0, ay = 0;
+      if (keys.has('KeyW')) ay -= ship.accel;
+      if (keys.has('KeyS')) ay += ship.accel;
+      if (keys.has('KeyA')) ax -= ship.accel;
+      if (keys.has('KeyD')) ax += ship.accel;
+
+      // integrate velocity as heading and speed
+      const vx = Math.cos(ship.dir) * ship.speed + ax;
+      const vy = Math.sin(ship.dir) * ship.speed + ay;
+
+      // new dir and speed
+      if (vx !== 0 || vy !== 0) ship.dir = Math.atan2(vy, vx);
+      const newSpeed = Math.hypot(vx, vy);
+      ship.speed = Math.min(ship.maxSpeed, newSpeed);
+
+      // friction
+      ship.speed *= (1 - ship.friction);
+      if (ship.speed < 0.02) ship.speed = 0;
+
+      // position
+      ship.x += Math.cos(ship.dir) * ship.speed;
+      ship.y += Math.sin(ship.dir) * ship.speed;
+
+      // screen wrap
+      if (ship.x < -20) ship.x = innerWidth + 20;
+      if (ship.x > innerWidth + 20) ship.x = -20;
+      if (ship.y < -20) ship.y = innerHeight + 20;
+      if (ship.y > innerHeight + 20) ship.y = -20;
+    }
+
+    // --- Rendering ---
+    function drawStars(){
+      ctx.fillStyle = STAR_COLOR;
+      for (const s of stars){
+        if (!s.alive) continue;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    function drawShip(){
+      const size = 10 * ship.scale;
+      ctx.save();
+      ctx.translate(ship.x, ship.y);
+      ctx.rotate(ship.dir);
+      ctx.beginPath();
+      ctx.moveTo(size*1.6, 0);
+      ctx.lineTo(-size, size*0.9);
+      ctx.lineTo(-size, -size*0.9);
+      ctx.closePath();
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#4aa3ff';
+      ctx.lineWidth = Math.max(1, 1.5*ship.scale);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // --- Collision ---
+    function checkCollision(){
+      if (quiz.style.display === 'grid') return;
+      const hitRadius = 12 * ship.scale;
+      for (let i=0;i<stars.length;i++){
+        const s = stars[i];
+        if (!s.alive) continue;
+        const dx = ship.x - s.x;
+        const dy = ship.y - s.y;
+        const dist2 = dx*dx + dy*dy;
+        const r = hitRadius + s.r;
+        if (dist2 <= r*r){
+          askQuestion(i);
+          break;
+        }
+      }
+    }
+
+    // --- Game loop ---
+    function loop(){
+      ctx.clearRect(0,0,innerWidth,innerHeight);
+
+      drawStars();
+      stepControls();
+      drawShip();
+      checkCollision();
+
+      // win text
+      if (stars.every(s=>!s.alive)) {
+        ctx.fillStyle = '#9ad6ff';
+        ctx.font = '20px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('All stars collected. Refresh to play again.', innerWidth/2, 40);
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    // --- Start ---
+    initStars();
+    requestAnimationFrame(loop);
+
+    // Accessibility: click outside panel closes quiz
+    quiz.addEventListener('click', (e)=>{ if (e.target === quiz) { pendingCollisionIndex=null; quiz.style.display='none'; }});
+  </script>
+</body>
+</html>
