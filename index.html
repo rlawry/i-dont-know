@@ -82,7 +82,14 @@ function shoot(){
   const py=ship.y+Math.sin(ship.dir)*15*ship.scale;
   projectiles.push({x:px,y:py,vx:Math.cos(ship.dir)*speed,vy:Math.sin(ship.dir)*speed,size:8});
 }
-addEventListener("keydown",e=>{if(e.code==="Space"&&quiz.style.display==="none"){shoot();}});
+addEventListener("keydown", e => {
+  if (quiz.style.display === "none") {
+    if (e.code === "Space" || e.code === "Spacebar" || e.key === " ") {
+      e.preventDefault();
+      shoot();
+    }
+  }
+});
 
 function drawShip(){
   const size=10*ship.scale;ctx.save();ctx.translate(ship.x,ship.y);ctx.rotate(ship.dir);
